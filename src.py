@@ -1,16 +1,20 @@
+from datetime import datetime
 import os
 
 from sqlalchemy import null
 from app import app
 import urllib.request
 import sqlite3
+import secrets 
+import time
 import boto3
 import json
+import base64
 from flask import Flask, flash, request, redirect, url_for, render_template, send_from_directory, send_file, jsonify, g, abort
 from werkzeug.utils import secure_filename
 from PIL import Image
 
-#download, thumbnail, delete, select, sqlite, google vision ai, list images
+#download, thumbnail, delete, select, sqlite, google vision ai, list images, location(extracted from image file), timestamp, description(in s3), posts should have user id instead of name
 
 ALLOWED_EXTENSIONS = set(['png', 'jpg', 'jpeg', 'gif'])
 conn = sqlite3.connect('pic_gallery.db')
@@ -69,12 +73,12 @@ def auth_check(auth_query, password):
 # Create user and write to database
 @app.route('/create_user', methods=['GET'])
 def create_user():
-    
     args = request.args
     name = args.get('name', type=str)
     password = args.get('password', type=str)
+    encoded = base64.b64encode(password)
     #conn.execute("INSERT INTO USERS (NAME, PASSWORD ) VALUES (" + name + ", " + password ")")
-    query = 'INSERT INTO USERS(NAME,PASSWORD) VALUES("'  + name + '", "' + password + '")'
+    query = 'INSERT INTO USERS(NAME,PASSWORD) VALUES("'  + name + '", "' + encoded + '")'
     con = get_db()
     cur = get_db().cursor()
     cur.execute(query)
@@ -96,6 +100,8 @@ def download_file(name):
 def download_posts():
     name = request.args.get('name', type=str)
     password = request.args.get('password', type=str)
+    password = password.encode("utf-8")
+    encoded = base64.b64encode(password)
     post_topic = request.args.get('topic', type=str)
     print(post_topic)
     posts = []
@@ -117,12 +123,14 @@ def download_posts():
 def download_key():
     name = request.args.get('name', type=str)
     password = request.args.get('password', type=str)
+    password = password.encode("utf-8")
+    encoded = base64.b64encode(password)
     key = request.args.get('key', type=str)
     con = get_db()
     cur = get_db().cursor()
     auth_query = 'SELECT * FROM USERS WHERE NAME="' + name + '";'
 
-    res = auth_check(auth_query, password)
+    res = auth_check(auth_query, encoded)
     if res != 1:
         abort(401)
     
@@ -140,21 +148,22 @@ def download_key():
             with open('downloads/' + key.split('/')[1], 'wb') as f:
                 s3.download_fileobj(BUCKET, key, f)
         except:
-            return 'No such object'
+            return 'No such object "' + key + '".'
 
     return 'Object ' + key + ' downloaded.'
-
 
 @app.route('/list_posts', methods=['GET'])
 def list_posts():
     name = request.args.get('name', type=str)
     password = request.args.get('password', type=str)
+    password = password.encode("utf-8")
+    encoded = base64.b64encode(password)
     post_topic = request.args.get('topic', type=str)
     con = get_db()
     cur = get_db().cursor()
     auth_query = 'SELECT * FROM USERS WHERE NAME="' + name + '";'
 
-    res = auth_check(auth_query, password)
+    res = auth_check(auth_query, encoded)
     if res != 1:
         abort(401)
         
@@ -207,7 +216,7 @@ def upload_file():
             image.save('thumbnails/' + name + '/' + filename, optimize=True, quality=40)
             upload_s3('thumbnails/' + name + '/' + filename, 'thumbnails/' + name, filename)
             upload_s3('userdirs/' + name + '/' + filename, name, filename)
-            post_query = 'INSERT INTO POSTS(NAME, USER_NAME, POST_TAG, S3_KEY) VALUES("'  + filename + '", "' + name + '", "' + str(post_topic) + '", "' + name + '/' + filename + '")'
+            post_query = 'INSERT INTO POSTS(NAME, USER_NAME, POST_TAG, S3_KEY, POST_DATE) VALUES("'  + filename + '", "' + name + '", "' + str(post_topic) + '", "' + name + '/' + filename + '", "' + str(time.time()) + '")'
             cur.execute(post_query)
             con.commit()
             return send_file('./userdirs/' + name + '/' + filename)
