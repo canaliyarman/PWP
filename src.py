@@ -76,9 +76,10 @@ def create_user():
     args = request.args
     name = args.get('name', type=str)
     password = args.get('password', type=str)
+    password_bytes = password.encode('ascii')
     encoded = base64.b64encode(password)
     #conn.execute("INSERT INTO USERS (NAME, PASSWORD ) VALUES (" + name + ", " + password ")")
-    query = 'INSERT INTO USERS(NAME,PASSWORD) VALUES("'  + name + '", "' + encoded + '")'
+    query = 'INSERT INTO USERS(USER_NAME,PASSWORD) VALUES("'  + name + '", "' + encoded + '")'
     con = get_db()
     cur = get_db().cursor()
     cur.execute(query)
@@ -128,7 +129,7 @@ def download_key():
     key = request.args.get('key', type=str)
     con = get_db()
     cur = get_db().cursor()
-    auth_query = 'SELECT * FROM USERS WHERE NAME="' + name + '";'
+    auth_query = 'SELECT * FROM USERS WHERE USER_NAME="' + name + '";'
 
     res = auth_check(auth_query, encoded)
     if res != 1:
@@ -161,7 +162,7 @@ def list_posts():
     post_topic = request.args.get('topic', type=str)
     con = get_db()
     cur = get_db().cursor()
-    auth_query = 'SELECT * FROM USERS WHERE NAME="' + name + '";'
+    auth_query = 'SELECT * FROM USERS WHERE USER_NAME="' + name + '";'
 
     res = auth_check(auth_query, encoded)
     if res != 1:
@@ -189,7 +190,7 @@ def upload_file():
 #    if not os.path.exists('./userdirs/' + name):
 #        return 'sen kimsin'
 
-    auth_query = 'SELECT * FROM USERS WHERE NAME="' + name + '";'
+    auth_query = 'SELECT * FROM USERS WHERE USER_NAME="' + name + '";'
 
     res = auth_check(auth_query, password)
     if res != 1:
@@ -216,7 +217,7 @@ def upload_file():
             image.save('thumbnails/' + name + '/' + filename, optimize=True, quality=40)
             upload_s3('thumbnails/' + name + '/' + filename, 'thumbnails/' + name, filename)
             upload_s3('userdirs/' + name + '/' + filename, name, filename)
-            post_query = 'INSERT INTO POSTS(NAME, USER_NAME, POST_TAG, S3_KEY, POST_DATE) VALUES("'  + filename + '", "' + name + '", "' + str(post_topic) + '", "' + name + '/' + filename + '", "' + str(time.time()) + '")'
+            post_query = 'INSERT INTO POSTS(FILE_NAME, USER_NAME, POST_TAG, S3_KEY, POST_DATE) VALUES("'  + filename + '", "' + name + '", "' + str(post_topic) + '", "' + name + '/' + filename + '", "' + str(time.time()) + '")'
             cur.execute(post_query)
             con.commit()
             return send_file('./userdirs/' + name + '/' + filename)
