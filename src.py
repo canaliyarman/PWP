@@ -51,7 +51,10 @@ def list_s3():
 def allowed_file(filename):
 	return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 	
-
+def encode_string(password):
+    password_bytes = password.encode('ascii')
+    encoded_bytes = base64.b64encode(password_bytes)
+    return encoded_bytes.decode("ascii")
 # Check user in database
 def auth_check(auth_query, password):
     con = get_db()
@@ -69,6 +72,14 @@ def auth_check(auth_query, password):
     con.commit()
     return 1
 
+def get_uid(name):
+    con = get_db()
+    cur = get_db().cursor()
+    query = 'SELECT USER_ID FROM USERS WHERE(USER_NAME = "' + name + '")'
+    cur.execute(query)
+    rows = cur.fetchall()
+    return rows[0][0]
+
 
 # Create user and write to database
 @app.route('/create_user', methods=['GET'])
@@ -76,10 +87,9 @@ def create_user():
     args = request.args
     name = args.get('name', type=str)
     password = args.get('password', type=str)
-    password_bytes = password.encode('ascii')
-    encoded = base64.b64encode(password)
+    encoded_password = encode_string(password)
     #conn.execute("INSERT INTO USERS (NAME, PASSWORD ) VALUES (" + name + ", " + password ")")
-    query = 'INSERT INTO USERS(USER_NAME,PASSWORD) VALUES("'  + name + '", "' + encoded + '")'
+    query = 'INSERT INTO USERS(USER_NAME,PASSWORD) VALUES("'  + name + '", "' + encoded_password + '")'
     con = get_db()
     cur = get_db().cursor()
     cur.execute(query)
@@ -101,8 +111,7 @@ def download_file(name):
 def download_posts():
     name = request.args.get('name', type=str)
     password = request.args.get('password', type=str)
-    password = password.encode("utf-8")
-    encoded = base64.b64encode(password)
+    encoded_password = encode_string(password)
     post_topic = request.args.get('topic', type=str)
     print(post_topic)
     posts = []
@@ -124,20 +133,20 @@ def download_posts():
 def download_key():
     name = request.args.get('name', type=str)
     password = request.args.get('password', type=str)
-    password = password.encode("utf-8")
-    encoded = base64.b64encode(password)
+    encoded_password = encode_string(password)
     key = request.args.get('key', type=str)
     con = get_db()
     cur = get_db().cursor()
     auth_query = 'SELECT * FROM USERS WHERE USER_NAME="' + name + '";'
 
-    res = auth_check(auth_query, encoded)
+    res = auth_check(auth_query, encoded_password)
     if res != 1:
         abort(401)
-    
-    post_check_query = 'SELECT * FROM POSTS WHERE USER_NAME="' + name  + '";'
+    uid = get_uid(name)
+    post_check_query = 'SELECT * FROM POSTS WHERE USER_ID=' + str(uid)  + ';'
     contents = cur.execute(post_check_query)
     con.commit()
+    print(contents)
     if contents == []:
         abort(401)
     else:
@@ -157,18 +166,17 @@ def download_key():
 def list_posts():
     name = request.args.get('name', type=str)
     password = request.args.get('password', type=str)
-    password = password.encode("utf-8")
-    encoded = base64.b64encode(password)
+    encoded_password = encode_string(password)
     post_topic = request.args.get('topic', type=str)
     con = get_db()
     cur = get_db().cursor()
     auth_query = 'SELECT * FROM USERS WHERE USER_NAME="' + name + '";'
 
-    res = auth_check(auth_query, encoded)
+    res = auth_check(auth_query, encoded_password)
     if res != 1:
         abort(401)
-        
-    post_query = 'SELECT * FROM POSTS WHERE USER_NAME="' + name  + '";'
+    uid = get_uid(name) 
+    post_query = 'SELECT * FROM POSTS WHERE USER_ID=' + str(uid) + ';'
     posts = []
     contents = cur.execute(post_query)
     con.commit()
@@ -184,6 +192,7 @@ def list_posts():
 def upload_file():
     name = request.args.get('name', type=str)
     password = request.args.get('password', type=str)
+    encoded_password = encode_string(password)
     post_topic = request.args.get('topic', type=str)
     if post_topic == null:
         post_topic = ''
@@ -192,10 +201,10 @@ def upload_file():
 
     auth_query = 'SELECT * FROM USERS WHERE USER_NAME="' + name + '";'
 
-    res = auth_check(auth_query, password)
+    res = auth_check(auth_query, encoded_password)
     if res != 1:
         abort(401)
-
+    user_id = get_uid(name)
     con = get_db()
     cur = get_db().cursor()
     if request.method == 'POST':
@@ -217,7 +226,7 @@ def upload_file():
             image.save('thumbnails/' + name + '/' + filename, optimize=True, quality=40)
             upload_s3('thumbnails/' + name + '/' + filename, 'thumbnails/' + name, filename)
             upload_s3('userdirs/' + name + '/' + filename, name, filename)
-            post_query = 'INSERT INTO POSTS(FILE_NAME, USER_NAME, POST_TAG, S3_KEY, POST_DATE) VALUES("'  + filename + '", "' + name + '", "' + str(post_topic) + '", "' + name + '/' + filename + '", "' + str(time.time()) + '")'
+            post_query = 'INSERT INTO POSTS(FILE_NAME, USER_ID, POST_TAG, S3_KEY, POST_DATE) VALUES("'  + filename + '", ' + str(user_id) + ', "' + str(post_topic) + '", "' + name + '/' + filename + '", "' + str(time.time()) + '")'
             cur.execute(post_query)
             con.commit()
             return send_file('./userdirs/' + name + '/' + filename)
